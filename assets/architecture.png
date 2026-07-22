@@ -1,0 +1,17 @@
+Architecture Diagram
+
+This is a placeholder for the system architecture diagram.
+
+Replace this file with an actual architecture diagram image (PNG format, recommended size: 1200x800px).
+
+The diagram should show:
+- System components and their relationships
+- Data flow between components
+- External dependencies
+- Observability layer integration
+
+Recommended tools for creating the diagram:
+- Mermaid
+- PlantUML
+- draw.io
+- Excalidraw

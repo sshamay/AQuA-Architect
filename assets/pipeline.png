@@ -1,0 +1,17 @@
+Pipeline Diagram
+
+This is a placeholder for the AQuA pipeline diagram.
+
+Replace this file with an actual pipeline diagram image (PNG format, recommended size: 1200x600px).
+
+The diagram should show:
+- Design → Build → Review pipeline stages
+- Quality gates between stages
+- Feedback loops
+- Evaluation checkpoints
+
+Recommended tools for creating the diagram:
+- Mermaid
+- PlantUML
+- draw.io
+- Excalidraw
