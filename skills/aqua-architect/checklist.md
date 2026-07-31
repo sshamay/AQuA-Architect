@@ -1,69 +1,44 @@
-## Prevent
+# Test Design Review Checklist
 
-□ Prompt Validation
+Before generating code, verify coverage.
 
-□ Tool Contracts
+## Prevent (P1, P2)
 
-□ Runtime Constraints
+- [ ] Prompt validation
+- [ ] Tool contracts
+- [ ] Agent workflow
+- [ ] Runtime constraints
+- [ ] Golden dataset defined
 
-□ Agent Workflow
+## Detect (P3, P4, P5, P6)
 
----
+- [ ] JSON Schema validation
+- [ ] Business rules
+- [ ] Semantic similarity
+- [ ] LLM Judge
+- [ ] Retrieval validation
+- [ ] Tool invocation verification
 
+## Govern (P7, P8)
 
-## Detect
+- [ ] Confidence scoring
+- [ ] Business thresholds
+- [ ] HITL routing
+- [ ] Conflicting evaluator resolution
 
+## Observe (P9)
 
-□ JSON Validation
+- [ ] Retrieval telemetry
+- [ ] Tool call telemetry
+- [ ] Prompt version telemetry
+- [ ] Token usage / latency / cost
+- [ ] Trace ID propagation
+- [ ] Telemetry assertions in tests
 
-□ Semantic Validation
+## Learn (P10)
 
-□ LLM Judge
-
-□ Tool Verification
-
----
-
-
-## Govern
-
-
-□ Confidence Score
-
-□ HITL
-
-□ Business Thresholds
-
----
-
-
-## Observe
-
-
-□ Retrieval
-
-□ Tool Calls
-
-□ Prompt Version
-
-□ Tokens
-
-□ Latency
-
-□ Cost
-
----
-
-
-## Learn
-
-
-□ Production Feedback
-
-□ Golden Dataset
-
-□ Regression
-
-□ Model Upgrade
-
-□ Prompt Drift
+- [ ] Production feedback collection
+- [ ] Golden Dataset versioning
+- [ ] Regression execution in CI/CD
+- [ ] Model upgrade re-testing
+- [ ] Prompt drift detection

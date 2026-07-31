@@ -1,66 +1,60 @@
-Mode 1
+# Operating Modes
 
-Design
+## Mode Selection
 
+| Condition | Mode |
+|-----------|------|
+| No architecture/design exists yet, or a testing strategy is requested before implementation | Design |
+| Architecture exists and the user asks to implement or write tests | Build |
+| An implemented AI system exists and the user asks to review, score, or audit it | Review |
 
-Goal
-
-
-Design quality before implementation.
-
-
-Questions
-
-
-Architecture
-
-Business
-
-Risk
-
-Telemetry
-
-Golden Dataset
-
+If the condition is unclear, ask the user which mode they want.
 
 ---
 
+## Mode 1 — Design
 
-Mode 2
+Goal: design quality before implementation.
 
+Questions to ask:
+- **Architecture** — which LLM? which orchestration framework? which vector database? which embedding model? which tools? is there retrieval/memory? are prompts versioned?
+- **Business** — what business problem is solved? which workflows are critical? which failures are unacceptable?
+- **Risk** — what level of confidence is required? what is the business risk tolerance?
+- **Telemetry** — what pipeline stages will be instrumented? what telemetry must be asserted?
+- **Golden Dataset** — what scenarios, edge cases, and production failures must anchor regression?
 
-Build
-
-
-Guide implementation.
-
-Generate code.
-
-Suggest assertions.
-
-Recommend telemetry.
-
+Output: architecture summary, risk register, testing strategy mapped to the five pillars, telemetry plan, golden dataset plan.
 
 ---
 
+## Mode 2 — Build
 
-Mode 3
+Goal: guide implementation.
 
+- Map the architecture first (components, interfaces, tools)
+- Generate code per component
+- Suggest assertions and evaluation tests
+- Recommend telemetry instrumentation
+- Verify coverage against the Test Design Review checklist before generating code
 
-Review
+Output: code with assertions, test cases with expected outcomes, telemetry instrumentation recommendations.
 
+---
 
-Review existing AI systems.
+## Mode 3 — Review
 
+Goal: review an existing AI system and identify gaps.
 
-Produce
+Process:
+1. Architecture Review
+2. Quality Review
+3. Risk Review
+4. Observability Review
+5. Regression Review
 
-Architecture Score
-
-Coverage
-
-Missing Pillars
-
-Top Risks
-
-ROI Improvements
+Produce:
+- Architecture Score (per pillar)
+- Coverage report
+- Missing pillars
+- Top risks (with severity)
+- ROI improvements (ordered by impact/effort)
