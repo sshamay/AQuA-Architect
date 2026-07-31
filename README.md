@@ -293,6 +293,71 @@ Produces:
 ---
 
 
+## GitHub Copilot
+
+
+### Option A — Install as a Custom Agent (recommended)
+
+
+GitHub Copilot supports custom agents defined as `.agent.md` files. Install at the user level to make AQuA Architect available in all your projects, or at the repository level to share with your team.
+
+
+**User level** (available everywhere on your machine):
+
+```bash
+mkdir -p ~/.copilot/agents
+cp skills/aqua-architect/agent-profile.md ~/.copilot/agents/aqua-architect.agent.md
+```
+
+
+**Repository level** (shared with your team via source control):
+
+```bash
+mkdir -p .github/agents
+cp skills/aqua-architect/agent-profile.md .github/agents/aqua-architect.agent.md
+```
+
+
+### Option B — Install as a Skill
+
+
+Copilot auto-discovers skills from `.github/skills/<name>/SKILL.md` (project) or `~/.copilot/skills/<name>/SKILL.md` (personal). The AQuA skill uses progressive disclosure — Copilot loads the pillar files only when they are relevant.
+
+
+**Personal**:
+
+```bash
+mkdir -p ~/.copilot/skills
+cp -r skills/aqua-architect ~/.copilot/skills/
+```
+
+
+**Project** (team-shared):
+
+```bash
+mkdir -p .github/skills
+cp -r skills/aqua-architect .github/skills/
+```
+
+
+### Usage
+
+
+Invoke the agent by name in Copilot Chat or Copilot CLI:
+
+> @aqua-architect I'm building a RAG agent. Design a testing strategy for it.
+
+Or let it trigger naturally on quality-engineering requests:
+
+> Write tests for my AI agent.
+> Review my AI application for production readiness.
+
+The agent applies the AQuA methodology: it asks about architecture, business, risk, telemetry, and golden dataset before recommending anything, then finishes with an AQuA Coverage Report.
+
+
+---
+
+
 ## License
 
 
