@@ -110,10 +110,10 @@ Produce:
 
 ## References
 
-- [Architecture](https://github.com/shayshamay/AQuA-Architect/blob/main/architecture.md)
-- [Modes](https://github.com/shayshamay/AQuA-Architect/blob/main/modes.md)
-- [Checklist](https://github.com/shayshamay/AQuA-Architect/blob/main/checklist.md)
-- [Scoring](https://github.com/shayshamay/AQuA-Architect/blob/main/scoring.md)
-- [Examples](https://github.com/shayshamay/AQuA-Architect/tree/main/examples)
-- [Prompts](https://github.com/shayshamay/AQuA-Architect/tree/main/prompts)
-- [Docs](https://github.com/shayshamay/AQuA-Architect/tree/main/docs)
+- [Architecture](https://github.com/sshamay/AQuA-Architect/blob/main/skills/aqua-architect/architecture.md)
+- [Modes](https://github.com/sshamay/AQuA-Architect/blob/main/skills/aqua-architect/modes.md)
+- [Checklist](https://github.com/sshamay/AQuA-Architect/blob/main/skills/aqua-architect/checklist.md)
+- [Scoring](https://github.com/sshamay/AQuA-Architect/blob/main/skills/aqua-architect/scoring.md)
+- [Examples](https://github.com/sshamay/AQuA-Architect/tree/main/examples)
+- [Prompts](https://github.com/sshamay/AQuA-Architect/tree/main/prompts)
+- [Reference docs](https://github.com/sshamay/AQuA-Architect/tree/main/skills/aqua-architect/reference)
