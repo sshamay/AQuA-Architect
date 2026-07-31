@@ -173,6 +173,126 @@ Prevent
 ---
 
 
+## Repository Structure
+
+
+```
+AQuA-Architect/
+├── README.md
+├── LICENSE
+├── CONTRIBUTING.md
+├── CHANGELOG.md
+├── assets/                       # Images and diagrams
+├── examples/                     # Example implementations
+│   ├── rag-agent.md
+│   ├── chatbot.md
+│   ├── multi-agent.md
+│   ├── tool-calling.md
+│   └── code-review.md
+├── prompts/                      # Structured prompts per mode
+│   ├── design.md
+│   ├── build.md
+│   └── review.md
+└── skills/
+    └── aqua-architect/           # Installable skill package
+        ├── SKILL.md              # Main skill
+        ├── modes.md              # Operating modes
+        ├── checklist.md          # Quality checklist
+        ├── architecture.md       # Architecture patterns
+        ├── scoring.md            # Scoring rubric
+        └── reference/            # Reference docs (per-pillar)
+            ├── pillars.md
+            ├── telemetry.md
+            ├── golden-dataset.md
+            ├── observability.md
+            ├── confidence.md
+            └── evaluation.md
+```
+
+
+## Installation
+
+
+### Option A — Clone the repo and copy the skill
+
+
+```bash
+git clone https://github.com/sshamay/AQuA-Architect.git
+mkdir -p ~/.config/opencode/skills/
+cp -r AQuA-Architect/skills/aqua-architect ~/.config/opencode/skills/
+```
+
+
+### Option B — One-liner
+
+
+```bash
+mkdir -p ~/.config/opencode/skills/ && \
+git archive --remote=https://github.com/sshamay/AQuA-Architect.git HEAD skills/aqua-architect | \
+tar -x -C ~/.config/opencode/skills/
+```
+
+
+### Restart opencode
+
+
+Skills are loaded when opencode starts. Quit and restart opencode after installing.
+
+
+### Verify the skill is installed
+
+
+Run the opencode command palette and look for the `aqua-architect` skill, or ask opencode directly:
+
+> Do you have the AQuA Architect skill?
+
+
+---
+
+
+## Usage
+
+
+AQuA Architect triggers automatically when you ask for quality engineering help on AI applications. It runs in three modes:
+
+| Mode | When to use | What it does |
+|------|-------------|--------------|
+| Design | Before writing code | Asks about architecture, business, risk, telemetry, golden dataset — then designs the testing strategy |
+| Build | During implementation | Guides code generation, suggests assertions, recommends telemetry |
+| Review | On an existing system | Produces an architecture score, coverage report, missing pillars, top risks, ROI improvements |
+
+Just ask normally — it loads itself when relevant:
+
+
+### Design Mode
+
+> I'm building a RAG agent for internal docs. Design a quality strategy for it.
+
+The skill will ask clarifying questions (LLM, orchestration framework, vector DB, tools, workflow, risks) before recommending anything.
+
+
+### Build Mode
+
+> Write tests for my AI agent.
+
+It will never jump straight to code. It first maps your architecture (which LLM? which framework? which tools?), then generates tests with proper assertions and telemetry.
+
+
+### Review Mode
+
+> Review my AI application for production readiness.
+
+Produces:
+- Architecture score (testability, observability, confidence, production readiness, regression readiness)
+- Test coverage report
+- Missing pillars (Prevent / Detect / Govern / Observe / Learn)
+- Top risks
+- ROI improvements
+
+
+---
+
+
 ## License
 
 
