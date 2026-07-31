@@ -81,11 +81,61 @@ The skill auto-triggers on requests like:
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note included
 
-## Installation
+## Installation (opencode)
 
 ```bash
 mkdir -p ~/.config/opencode/skills/
-cp -r skills/aqua-architect/python-test-starter ~/.config/opencode/skills/
+cp -r skills/python-test-starter ~/.config/opencode/skills/
 ```
 
 Then quit and restart opencode.
+
+## GitHub Copilot
+
+### Option A — Install as a Custom Agent (recommended)
+
+GitHub Copilot supports custom agents defined as `.agent.md` files. Install at the user level to make python-test-starter available in all your projects, or at the repository level to share with your team.
+
+**User level** (available everywhere on your machine):
+
+```bash
+mkdir -p ~/.copilot/agents
+cp skills/python-test-starter/agent-profile.md ~/.copilot/agents/python-test-starter.agent.md
+```
+
+**Repository level** (shared with your team via source control):
+
+```bash
+mkdir -p .github/agents
+cp skills/python-test-starter/agent-profile.md .github/agents/python-test-starter.agent.md
+```
+
+### Option B — Install as a Skill
+
+Copilot auto-discovers skills from `.github/skills/<name>/SKILL.md` (project) or `~/.copilot/skills/<name>/SKILL.md` (personal).
+
+**Personal**:
+
+```bash
+mkdir -p ~/.copilot/skills
+cp -r skills/python-test-starter ~/.copilot/skills/
+```
+
+**Project** (team-shared):
+
+```bash
+mkdir -p .github/skills
+cp -r skills/python-test-starter .github/skills/
+```
+
+### Usage
+
+Invoke the agent by name in Copilot Chat or Copilot CLI:
+
+> @python-test-starter Scaffold a pytest project for testing our REST API.
+
+Or let it trigger naturally:
+
+> Start a new Python test project.
+
+The agent asks about the assignment (SUT, base URL, tech stack, constraints) before generating any code, then scaffolds the project file-by-file with your review at each step.
