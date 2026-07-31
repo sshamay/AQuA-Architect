@@ -100,14 +100,14 @@ GitHub Copilot supports custom agents defined as `.agent.md` files. Install at t
 
 ```bash
 mkdir -p ~/.copilot/agents
-cp skills/python-test-starter/agent-profile.md ~/.copilot/agents/python-test-starter.agent.md
+cp skills/python-test-starter/python-starter.agent.md ~/.copilot/agents/python-starter.agent.md
 ```
 
 **Repository level** (shared with your team via source control):
 
 ```bash
 mkdir -p .github/agents
-cp skills/python-test-starter/agent-profile.md .github/agents/python-test-starter.agent.md
+cp skills/python-test-starter/python-starter.agent.md .github/agents/python-starter.agent.md
 ```
 
 ### Option B — Install as a Skill
@@ -132,7 +132,7 @@ cp -r skills/python-test-starter .github/skills/
 
 Invoke the agent by name in Copilot Chat or Copilot CLI:
 
-> @python-test-starter Scaffold a pytest project for testing our REST API.
+> @python-starter Scaffold a pytest project for testing our REST API.
 
 Or let it trigger naturally:
 

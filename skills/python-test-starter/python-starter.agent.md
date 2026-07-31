@@ -1,5 +1,5 @@
 ---
-name: python-test-starter
+name: python-starter
 description: Scaffolds a Python + pytest automation project following principal-automation-engineer standards. Use when the user says "start a new Python test project", "scaffold a pytest project", "create an automation framework", or any request to build a new Python testing codebase from scratch. Use ONLY for greenfield Python test/automation projects, not for adding tests to an existing project.
 ---
 
