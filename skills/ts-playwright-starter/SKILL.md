@@ -35,7 +35,8 @@ project_root/
 │   ├── clients/                           # thin API adapters (request context / fetch)
 │   ├── pages/                             # Page Object Models, one per screen
 │   ├── fixtures/                          # custom Playwright fixtures (auth state, apiContext)
-│   └── models/                            # TS types/interfaces for request/response data
+│   ├── models/                            # TS types/interfaces for request/response data
+│   └── utils/                             # shared helpers (date/format/transform); no "just in case" code
 ├── tests/
 │   ├── data/                              # test-owned data: sample payloads, expected JSON
 │   ├── api/                               # API-layer tests using clients (requestContext/fetch)
@@ -62,6 +63,8 @@ project_root/
 - **Right abstraction**: separate config -> clients/pages -> tests. Page Objects wrap UI interaction; API clients wrap HTTP calls so tests can mock at that boundary. No factories-of-factories, custom DSLs, or base classes "just in case."
 
 - **Clean OOP**: small classes with a single responsibility; prefer composition over inheritance; no god objects. Each client/Page Object should do one job and be independently testable.
+
+- **SOLID + OOP principles**: Encapsulation — Page Objects hide selectors and UI logic from tests. Inheritance vs composition — a base `Page` class only when several pages genuinely share behavior; otherwise use composition/utility components. Abstraction — generic reusable action helpers (typed, not stringly), but never sleep-based: always built on web-first `expect`. SOLID — Single Responsibility (one class per page/feature) and Open/Closed (add a new page/client instead of editing core framework code).
 
 - **API pattern (automate an API call)**: use the Playwright `request` fixture / `requestContext` for HTTP. Either call it directly (`request.get(baseURL + '/orders')`, assert status + body shape) or wrap it in a typed client in `src/clients/`. Every call gets a timeout; assert on status code, JSON schema/shape, and business fields, not just "2xx".
 
