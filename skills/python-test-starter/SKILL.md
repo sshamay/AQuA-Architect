@@ -57,7 +57,11 @@ project_root/
 
 - **Clear naming**: snake_case for files/functions/variables, PascalCase for classes. Verb-first functions (`create_order`, `load_config`). No cryptic abbreviations, no 8-word names. Test names: `test_<behavior>_<expected_outcome>`.
 - **Right abstraction**: separate config -> clients -> services -> tests. Wrap external calls in a client class so tests can mock at that boundary. No factories-of-factories, custom DSLs, or base classes "just in case."
-- **Error handling**: `try/except` around I/O and network calls; catch specific exceptions, never bare `except:`. Raise clear domain exceptions with context. Add timeouts to every network call. Fail fast on bad config.
+
+- **Clean OOP**: small classes with a single responsibility; prefer composition over inheritance; no god objects. Each client/service should do one job and be independently testable.
+- **Error handling**: `try/except` around I/O and network calls; catch specific exceptions, never bare `except:`. Raise clear domain exceptions with context. Add timeouts to every network call. Fail fast on bad config. Defensive: validate inputs; never silently swallow a failure.
+
+- **Debuggable failures**: every failure must be actionable — log context (request, params, response) so a red test tells you what broke and where, not just that it broke. Prefer a clear assertion message over re-running to debug.
 - **Readable over clever**: small functions (one job each), early returns over deep nesting, type hints on public functions, dataclasses instead of loose dicts. If a line needs a comment to be understood, simplify it.
 - **Security**: no hardcoded secrets/URLs — read from `config.yaml` or env via the loader. Never log credentials or PII. No `shell=True`.
 - **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking. Never use `responses` or other third-party mock libraries. Patch at the HTTP client boundary (`requests.request` / your HTTP lib's request function) with a helper like `_resp()` that builds mock Response objects. This keeps mocks explicit, debuggable, and avoids extra dependencies.
