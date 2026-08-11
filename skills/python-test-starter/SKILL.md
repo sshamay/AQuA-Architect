@@ -14,68 +14,107 @@ description: |
 Before scaffolding, ask the user these questions:
 
 1. **Assignment** — What system are you testing? (REST API / UI / CLI / library)
-2. **System under test** — What's the base URL / app path / package being tested?
+2. **System under test** — What's the base URL / app path / package being tested? Is it a service you control (spawnable) or external (fixed URL)?
 3. **Tech stack** — Allowed libraries? (requests / httpx / playwright / selenium / etc.)
 4. **Constraints** — Time limit, must run offline, no network, etc.
 5. **Package name** — Name for the Python package (default: derived from project dir)
 
 Adapt the generated code to these answers. Do not hardcode assumptions.
 
-## Step 1 — Folder structure
+## Step 1 — Environment model (APP_ENV)
+
+Environments are selected by the `APP_ENV` env var, never by editing YAML profiles. No `config.yaml`, no `.env`.
 
 ```
 project_root/
-├── config/
-│   ├── config.yaml                        # ONE source of truth: env profiles (dev/staging/test)
-│   └── config.example.yaml                # committed template
 ├── src/
 │   └── <package>/
 │       ├── __init__.py
-│       ├── config_loader.py               # load + validate YAML into typed settings
-│       ├── logging_setup.py               # one place to configure logging
 │       ├── clients/                       # thin API/UI adapters (HTTP calls live here)
 │       ├── services/                      # workflows that orchestrate clients
 │       └── models/                        # dataclasses for request/response data
 ├── tests/
-│   ├── conftest.py                        # shared fixtures: loads config with env="test"
+│   ├── conftest.py                        # APP_ENV registry, server strategies, secret stripping, prod guard
 │   ├── data/                              # test-owned data: sample payloads, expected JSON
-│   ├── unit/                              # fast, isolated tests with mocks
-│   └── integration/                       # tests hitting real/stubbed dependencies
-├── pytest.ini                             # markers, testpaths
+│   ├── unit/
+│   │   ├── conftest.py                    # auto-marks every test in this dir as unit
+│   │   └── test_*.py
+│   ├── integration/
+│   │   ├── conftest.py                    # auto-marks every test in this dir as integration
+│   │   └── test_*.py
+│   └── e2e/
+│       ├── conftest.py                    # auto-marks every test in this dir as e2e
+│       └── test_*.py
+├── pyproject.toml                         # pytest config (testpaths, markers) + test deps
 ├── requirements.txt                       # pinned versions
 ├── README.md                              # setup, run commands, design notes
 └── .gitignore                             # secrets, __pycache__, .pytest_cache
 ```
 
-**Key rule**: Keep test logic out of `src/` and business logic out of `tests/`.
+**The conftest registry** — mirror the `TEST_CONFIG` pattern from the parkinglot repo. Each env maps to an API URL and a server strategy:
 
-**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Instead, the root `config.yaml` holds a `test` env profile, and `conftest.py` loads it via the same `config_loader` (`load_config(env="test")`). Test-owned artifacts (sample payloads, expected responses) live in `tests/data/`, never in the app config.
+```python
+TEST_CONFIG = {
+    "dev":       {"api_url": "http://testserver",      "server": "testclient"},
+    "qa":        {"api_url": "http://localhost:9999",  "server": "uvicorn"},
+    "staging":   {"api_url": "http://localhost:9998",  "server": "uvicorn"},
+    "e2e":       {"api_url": "http://localhost:8000",  "server": "local"},
+    "prod":      {"api_url": "http://testserver",      "server": "testclient"},
+    "local":     {"api_url": "http://localhost:8000",  "server": "local"},
+    "ci":        {"api_url": "http://localhost:8003",  "server": "container"},
+}
+
+def _resolve_env() -> str:
+    env = os.getenv("APP_ENV", "dev")
+    if env not in TEST_CONFIG:
+        pytest.exit(f"Invalid APP_ENV: {env}")
+    return env
+```
+
+**Server strategies** (from parkinglot `tests/conftest.py`):
+
+- `testclient` — in-process ASGI client against the app import; use a temp DB per fixture and clean up after. Fastest, default for `dev`/`prod` safety.
+- `uvicorn` — spawn a real `uvicorn` subprocess on the configured port (with xdist worker port offsets); wait for readiness before yielding.
+- `container` — `docker compose up -d --build` then `down -v`; require Docker or `pytest.exit`.
+- `local` — assume a server is already running at `api_url` (e.g. a dev box or external env); just point the client at it.
+
+Always use temp/sandboxed resources for anything you spawn (temp DB file per fixture, `JWT_SECRET=test-secret`, etc.) and clean up in `finally`.
+
+**Safety rules enforced in `tests/conftest.py`** (import-time):
+
+- `APP_ENV` defaults to `dev`; any value not in `TEST_CONFIG` → `pytest.exit`.
+- `APP_ENV=prod` requires `--run-prod` (added via `parser.addoption` in `pytest_addoption`); `pytest_configure` aborts otherwise.
+- Known secret env vars (`API_KEY`, `AUTH_TOKEN`, `DB_PASSWORD`) are stripped from the environment on import (`os.environ.pop`) so client code never picks them up.
+
+**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Runtime settings (API URL, server strategy) come from the `TEST_CONFIG` registry via `APP_ENV`. Test-owned artifacts (sample payloads, expected responses) live in `tests/data/`, never in the app config.
+
+**Key rule**: Keep test logic out of `src/` and business logic out of `tests/`.
 
 ## Step 2 — Coding guidelines
 
 - **Ask before assuming**: Always begin by asking what the user is testing. Gather SUT, tech stack, and constraints before writing any code.
 
-- **Clear naming**: snake_case for files/functions/variables, PascalCase for classes. Verb-first functions (`create_order`, `load_config`). No cryptic abbreviations, no 8-word names. Test names: `test_<behavior>_<expected_outcome>`.
+- **Clear naming**: snake_case for files/functions/variables, PascalCase for classes. Verb-first functions (`create_order`, `resolve_env`). No cryptic abbreviations, no 8-word names. Test names: `test_<behavior>_<expected_outcome>`.
 - **Right abstraction**: separate config -> clients -> services -> tests. Wrap external calls in a client class so tests can mock at that boundary. No factories-of-factories, custom DSLs, or base classes "just in case."
 
 - **Clean OOP**: small classes with a single responsibility; prefer composition over inheritance; no god objects. Each client/service should do one job and be independently testable.
-- **Error handling**: `try/except` around I/O and network calls; catch specific exceptions, never bare `except:`. Raise clear domain exceptions with context. Add timeouts to every network call. Fail fast on bad config. Defensive: validate inputs; never silently swallow a failure.
+- **Error handling**: `try/except` around I/O and network calls; catch specific exceptions, never bare `except:`. Raise clear domain exceptions with context. Add timeouts to every network call. Fail fast on bad config (`pytest.exit` on invalid `APP_ENV`). Defensive: validate inputs; never silently swallow a failure.
 
 - **Debuggable failures**: every failure must be actionable — log context (request, params, response) so a red test tells you what broke and where, not just that it broke. Prefer a clear assertion message over re-running to debug.
 - **Readable over clever**: small functions (one job each), early returns over deep nesting, type hints on public functions, dataclasses instead of loose dicts. If a line needs a comment to be understood, simplify it.
-- **Security**: no hardcoded secrets/URLs — read from `config.yaml` or env via the loader. Never log credentials or PII. No `shell=True`.
+- **Security**: no hardcoded secrets/URLs — read from the `TEST_CONFIG` registry or per-env env vars, never in source. Never log credentials or PII. No `shell=True`. Secrets are stripped at import.
 - **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking. Never use `responses` or other third-party mock libraries. Patch at the HTTP client boundary (`requests.request` / your HTTP lib's request function) with a helper like `_resp()` that builds mock Response objects. This keeps mocks explicit, debuggable, and avoids extra dependencies.
-- **Pytest discipline**: Arrange-Act-Assert; fixtures in `conftest.py`; `@pytest.mark.parametrize` for data cases; markers `unit`/`integration`; tests must be independent and order-free. Mock HTTP/external systems, not internal logic. Cover happy path + validation failure + one edge/error case per critical flow.
+- **Pytest discipline**: Arrange-Act-Assert; fixtures in `conftest.py`; `@pytest.mark.parametrize` for data cases; markers `unit`/`integration`/`e2e`; tests must be independent and order-free. Mock HTTP/external systems, not internal logic. Cover happy path + validation failure + one edge/error case per critical flow. Each test dir auto-marks itself via `pytest_collection_modifyitems` comparing `Path(item.fspath).parent` to the conftest's own directory — no manual markers.
 - **Comments**: explain *why*, not *what*. No narration comments.
 
 ## Step 3 — Build order
 
-1. `config_loader.py` + `config.yaml` (with a `test` env profile)
-2. One client (the thin adapter for the system under test)
-3. Models for the data exchanged
-4. `conftest.py` fixtures (load config via `load_config(env="test")`) + any `tests/data/` files
-5. Tests (unit first, then integration)
-6. `README.md` with how to install, configure, and run (`pytest`, `pytest -m unit`)
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt`
+2. `tests/conftest.py` — `TEST_CONFIG` registry, `_resolve_env`, secret stripping, `--run-prod` guard, client fixtures (server strategies)
+3. One client (the thin adapter for the system under test)
+4. Models for the data exchanged
+5. Nested conftests (auto-markers) + tests (unit first, then integration/e2e) + any `tests/data/` files
+6. `README.md` with how to install, configure (`APP_ENV`), and run (`pytest`, `pytest -m unit`, `APP_ENV=prod pytest --run-prod`)
 
 ## Step 4 — Working rules
 
@@ -88,9 +127,9 @@ project_root/
 
 ## Definition of done
 
-- [ ] Structure matches the layout above
-- [ ] `pytest` passes with documented commands
-- [ ] No secrets/URLs hardcoded; config-driven
+- [ ] Structure matches the layout above (`pyproject.toml`, not `pytest.ini`)
+- [ ] `pytest` passes with documented commands; env selected via `APP_ENV`, defaults to `dev`
+- [ ] No secrets/URLs hardcoded; registry/env-driven with prod guard and secret stripping
 - [ ] Clear names, type hints, specific exception handling
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note (tradeoffs + what I'd add in production)
