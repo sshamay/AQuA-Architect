@@ -7,32 +7,39 @@ Scaffolds Python + pytest automation projects following Principal Automation Eng
 When loaded, the skill drives the scaffolding of a complete test automation project in a defined order:
 
 1. **Gather requirements** — asks about the assignment (SUT type, base URL, tech stack, constraints) before writing any code
-2. **Create the folder structure** — config → src → tests, with no business logic in tests and no test logic in src
+2. **Create the folder structure** — src → tests, with no business logic in tests and no test logic in src
 3. **Generate one file at a time** — smallest correct version, pausing for review between files
 4. **Enforce coding standards** — naming, error handling, type hints, security, mocking discipline
 5. **Finish with a definition-of-done checklist** — verified pytest run, no hardcoded secrets, runnable README
+
+## Environment model
+
+Environments are selected by the `APP_ENV` env var — no `config.yaml`, no `.env`. A `TEST_CONFIG` registry in `tests/conftest.py` maps each env (`dev`/`qa`/`staging`/`e2e`/`prod`/`local`/`ci`) to its API URL and server strategy (`testclient`/`uvicorn`/`container`/`local`). Safety rules are enforced at import time:
+
+- `APP_ENV` defaults to `dev`; unknown values fail fast (`pytest.exit`)
+- `APP_ENV=prod` requires `--run-prod` or pytest aborts
+- Secret env vars (`API_KEY`, `AUTH_TOKEN`, `DB_PASSWORD`) are stripped from the environment on import
 
 ## Folder structure it produces
 
 ```
 project_root/
-├── config/
-│   ├── config.yaml            # ONE source of truth: env profiles (dev/test)
-│   └── config.example.yaml    # committed template
 ├── src/
 │   └── <package>/
 │       ├── __init__.py
-│       ├── config_loader.py   # load + validate YAML into typed settings
-│       ├── logging_setup.py   # one place to configure logging
 │       ├── clients/           # thin API/UI adapters (HTTP calls live here)
 │       ├── services/          # workflows that orchestrate clients
 │       └── models/            # dataclasses for request/response data
 ├── tests/
-│   ├── conftest.py            # shared fixtures: loads config with env="test"
+│   ├── conftest.py            # APP_ENV registry, server strategies, secret stripping, prod guard
 │   ├── data/                  # test-owned data: sample payloads
-│   ├── unit/                  # fast, isolated tests with mocks
-│   └── integration/           # tests hitting real/stubbed dependencies
-├── pytest.ini                 # markers, testpaths
+│   ├── unit/
+│   │   └── conftest.py        # auto-marks tests in this dir as unit
+│   ├── integration/
+│   │   └── conftest.py        # auto-marks tests in this dir as integration
+│   └── e2e/
+│       └── conftest.py        # auto-marks tests in this dir as e2e
+├── pyproject.toml             # pytest config (testpaths, markers) + test deps
 ├── requirements.txt           # pinned versions
 ├── README.md                  # setup, run commands, design notes
 └── .gitignore
@@ -40,11 +47,14 @@ project_root/
 
 ## Key rules it enforces
 
-- **Config vs test data**: runtime settings live only in `config.yaml` (with a `test` env profile); test-owned artifacts (sample payloads) live in `tests/data/`. No duplicated config that drifts.
+- **APP_ENV model**: environments are chosen by the `APP_ENV` env var; the `TEST_CONFIG` registry in `conftest.py` is the single source of truth for API URL + server strategy. No YAML profiles, no `.env`.
+- **Server strategies**: `testclient` (in-process ASGI), `uvicorn` (spawned subprocess, xdist port offsets), `container` (docker compose), `local` (already-running server). Use temp/sandboxed resources and clean up in `finally`.
+- **Config vs test data**: runtime settings live only in the `TEST_CONFIG` registry; test-owned artifacts (sample payloads) live in `tests/data/`. No duplicated config that drifts.
 - **Mocking**: uses `pytest-mock` (`mocker` fixture). Patches at the HTTP client boundary (`requests.request`), never a third-party mock library like `responses`.
-- **Build order**: config_loader → client → models → conftest + test data → tests → README.
+- **Auto-marking**: each test dir auto-marks itself via `pytest_collection_modifyitems` — no manual markers.
+- **Build order**: conftest → client → models → nested conftests + test data → tests → README.
 - **Coding standards**: verb-first functions, type hints, dataclasses over dicts, specific exception handling, timeouts on every network call, no hardcoded URLs/secrets, no `shell=True`.
-- **Pytest discipline**: Arrange-Act-Assert, fixtures in `conftest.py`, `@pytest.mark.parametrize` for data cases, `unit`/`integration` markers, order-free tests, happy path + validation failure + one edge case per flow.
+- **Pytest discipline**: Arrange-Act-Assert, fixtures in `conftest.py`, `@pytest.mark.parametrize` for data cases, `unit`/`integration`/`e2e` markers, order-free tests, happy path + validation failure + one edge case per flow.
 
 ## Usage
 
@@ -76,7 +86,7 @@ The skill auto-triggers on requests like:
 
 - [ ] Structure matches the layout
 - [ ] `pytest` passes with documented commands
-- [ ] No secrets/URLs hardcoded; config-driven
+- [ ] No secrets/URLs hardcoded; `APP_ENV`-driven with prod guard and secret stripping
 - [ ] Clear names, type hints, specific exception handling
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note included
