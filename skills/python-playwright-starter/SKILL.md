@@ -23,7 +23,7 @@ Adapt the generated code to these answers. Do not hardcode assumptions.
 
 ## Step 1 — Environment model (APP_ENV)
 
-Environments are selected by the `APP_ENV` env var, never by editing YAML profiles. No `config.yaml`, no `.env`.
+Environments are selected by the `APP_ENV` env var, never by editing YAML profiles. No `config.yaml`. Credentials are never registry keys — see "Registry vs secrets (hybrid)" below.
 
 ```
 project_root/
@@ -34,30 +34,31 @@ project_root/
 │       ├── fixtures/                      # pytest fixtures (logged-in session, page objects)
 │       └── models/                        # dataclasses for exchanged data (address, card, product)
 ├── tests/
-│   ├── conftest.py                        # APP_ENV registry, secret stripping, prod guard, shared fixtures
-│   ├── data/                              # test-owned data: sample payloads, expected values
+│   ├── conftest.py                        # APP_ENV registry (topology only), secret loading, prod guard, shared fixtures
+│   ├── data/                              # test-owned data: sample payloads, expected values (never credentials)
 │   ├── e2e/
 │   │   ├── conftest.py                    # auto-marks every test in this dir as e2e
 │   │   └── test_*.py
 │   └── api/                               # REST tests using requests/httpx (if applicable)
 │       └── conftest.py                    # auto-marks every test in this dir as api
 ├── pyproject.toml                         # pytest config (testpaths, markers) + test deps
-├── requirements.txt                       # pinned versions
+├── requirements.txt                       # pinned versions (include python-dotenv for secrets)
 ├── README.md                              # setup, run commands (pytest -m e2e), design notes
-└── .gitignore                             # secrets, __pycache__, .pytest_cache, test-results
+├── .env.example                           # committed secret-key template — keys only, no values
+└── .gitignore                             # .env, __pycache__, .pytest_cache, test-results
 ```
 
-**The conftest registry** — mirror the `TEST_CONFIG` pattern from the parkinglot repo. For a UI suite the registry maps each env to its `base_url` and credentials:
+**The conftest registry** — mirror the `TEST_CONFIG` pattern from the parkinglot repo. The registry maps each env to its `base_url` and server strategy — credentials never appear here:
 
 ```python
 TEST_CONFIG = {
-    "dev":   {"base_url": "http://localhost:8000", "email": "dev@example.com", "password": "dev-pass"},
-    "test":  {"base_url": "http://localhost:8001", "email": "test@example.com", "password": "test-pass"},
-    "qa":    {"base_url": "http://qa.example.com",  "email": "qa@example.com",  "password": "qa-pass"},
-    "e2e":   {"base_url": "http://e2e.example.com", "email": "e2e@example.com", "password": "e2e-pass"},
-    "prod":  {"base_url": "http://example.com",     "email": "prod@example.com","password": "prod-pass"},
-    "local": {"base_url": "http://localhost:8000",  "email": "dev@example.com", "password": "dev-pass"},
-    "ci":    {"base_url": "http://localhost:8001",  "email": "test@example.com","password": "test-pass"},
+    "dev":   {"base_url": "http://localhost:8000", "server": "local"},
+    "test":  {"base_url": "http://localhost:8001", "server": "local"},
+    "qa":    {"base_url": "http://qa.example.com",  "server": "local"},
+    "e2e":   {"base_url": "http://e2e.example.com", "server": "local"},
+    "prod":  {"base_url": "http://example.com",     "server": "local"},
+    "local": {"base_url": "http://localhost:8000",  "server": "local"},
+    "ci":    {"base_url": "http://localhost:8001",  "server": "local"},
 }
 
 def _resolve_env() -> str:
@@ -71,12 +72,14 @@ def _resolve_env() -> str:
 
 - `APP_ENV` defaults to `dev`; any value not in `TEST_CONFIG` → `pytest.exit`.
 - `APP_ENV=prod` requires `--run-prod` (added via `parser.addoption` in `pytest_addoption`); `pytest_configure` aborts otherwise.
-- Known secret env vars (`API_KEY`, `AUTH_TOKEN`, `DB_PASSWORD`) are stripped from the environment on import (`os.environ.pop`) so client code never picks them up.
-- Credentials come from the `TEST_CONFIG` registry (or per-env env vars like `DREAM_EMAIL`/`DREAM_PASSWORD` with the registry defaulting to them), never hardcoded in tests.
+- Secrets are loaded explicitly at import from a gitignored `.env` (or CI env vars) via `python-dotenv` into a `SECRETS` mapping, then stripped from `os.environ` (`os.environ.pop`) so client code can never pick them up accidentally. Deliberate loading is the intended path; stripping is only the safety net. Missing secrets fail fast at fixture time with a pointer to `.env.example`.
+- Credentials never appear in `TEST_CONFIG` or in tests — they are secrets, loaded from `.env`/CI env vars (committed template: `.env.example`).
 
-**External site vs server you control**: if the SUT is a fixed external URL (e.g. a public demo site), the registry just holds `base_url` + creds and there is no server to spawn. If the SUT is a service you own, add the parkinglot server-strategy pattern (`testclient` / `uvicorn` / `container` / `local`) to the same registry and spawn/wait per fixture.
+**Registry vs secrets (hybrid)**: `TEST_CONFIG` holds **only non-secret, static topology** (base URL, server strategy, ports). Credentials of any kind — including demo/test creds — are secrets and are **never valid registry keys**. All credentials live in a gitignored `.env` (committed template: `.env.example`) or CI env vars, loaded via `python-dotenv` at import and stripped from the environment after capture. Treating even demo creds as secrets keeps the boundary binary: no judgment call in review about what counts as a secret.
 
-**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Runtime settings (base_url, credentials) come from the `TEST_CONFIG` registry / `APP_ENV`. Test-owned artifacts (sample payloads, expected values) live in `tests/data/`, never in the app config.
+**External site vs server you control**: if the SUT is a fixed external URL (e.g. a public demo site), the registry just holds `base_url` and there is no server to spawn. If the SUT is a service you own, add the parkinglot server-strategy pattern (`testclient` / `uvicorn` / `container` / `local`) to the same registry and spawn/wait per fixture.
+
+**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Non-secret runtime settings (base_url, server strategy) come from the `TEST_CONFIG` registry via `APP_ENV`. Test-owned artifacts (sample payloads, expected values) live in `tests/data/` — but credentials never do: they are secrets and live in `.env`/CI env only.
 
 **Key rule**: Keep test logic out of `src/` and business logic out of `tests/`.
 
@@ -98,7 +101,7 @@ def _resolve_env() -> str:
 
 - **Debuggable failures**: every failure must be actionable — log context (page state, URL) so a red test tells you what broke and where, not just that it broke. Prefer a clear assertion message over re-running to debug.
 
-- **Security**: no hardcoded secrets/URLs — read from the `TEST_CONFIG` registry or per-env env vars, never in source. Never log credentials or PII. Secrets are stripped at import.
+- **Security**: no hardcoded secrets/URLs — base URLs read from the `TEST_CONFIG` registry; credentials read from `.env`/CI env vars (never the registry, never source). Never log credentials or PII. Secrets are captured explicitly at import, then stripped from the environment.
 
 - **Mocking**: Use `page.route()` / `context.route()` to intercept API calls at the HTTP boundary. Mock external systems, not internal logic.
 
@@ -128,8 +131,8 @@ def _resolve_env() -> str:
 
 ## Step 3 — Build order
 
-1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions)
-2. `tests/conftest.py` — `TEST_CONFIG` registry, `_resolve_env`, secret stripping, `--run-prod` guard, base-url fixture, page-object fixtures
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions and `python-dotenv` for secrets)
+2. `.env.example` (secret-key template) + `tests/conftest.py` — `TEST_CONFIG` registry (topology only), `_resolve_env`, secret loading/stripping (python-dotenv), `--run-prod` guard, base-url fixture, page-object fixtures
 3. One Page Object for the system under test
 4. `tests/e2e/conftest.py` (auto-marker) + first `tests/e2e/` test
 5. `README.md` with how to install, configure (`APP_ENV`), and run (`pytest`, `pytest -m e2e`, `APP_ENV=prod pytest --run-prod`)
@@ -147,7 +150,7 @@ def _resolve_env() -> str:
 
 - [ ] Structure matches the layout above (`pyproject.toml`, not `pytest.ini`)
 - [ ] `pytest` passes with documented commands; env selected via `APP_ENV`, defaults to `dev`
-- [ ] No secrets/URLs hardcoded; registry/env-driven with prod guard and secret stripping
+- [ ] No secrets/URLs hardcoded; `TEST_CONFIG` holds topology only, credentials live in gitignored `.env`/CI env (`.env.example` committed), prod guard + secret stripping present
 - [ ] Clear names, type hints, web-first assertions (no sleeps)
 - [ ] Complex multi-field validations aggregate failures via `pytest-check` soft assertions (not the first failing `assert`)
 - [ ] README lets a reviewer run it in under 5 minutes

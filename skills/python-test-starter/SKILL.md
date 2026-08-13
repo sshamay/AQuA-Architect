@@ -23,7 +23,7 @@ Adapt the generated code to these answers. Do not hardcode assumptions.
 
 ## Step 1 — Environment model (APP_ENV)
 
-Environments are selected by the `APP_ENV` env var, never by editing YAML profiles. No `config.yaml`, no `.env`.
+Environments are selected by the `APP_ENV` env var, never by editing YAML profiles. No `config.yaml`. Credentials are never registry keys — see "Registry vs secrets (hybrid)" below.
 
 ```
 project_root/
@@ -34,8 +34,8 @@ project_root/
 │       ├── services/                      # workflows that orchestrate clients
 │       └── models/                        # dataclasses for request/response data
 ├── tests/
-│   ├── conftest.py                        # APP_ENV registry, server strategies, secret stripping, prod guard
-│   ├── data/                              # test-owned data: sample payloads, expected JSON
+│   ├── conftest.py                        # APP_ENV registry (topology only), server strategies, secret loading, prod guard
+│   ├── data/                              # test-owned data: sample payloads, expected JSON (never credentials)
 │   ├── unit/
 │   │   ├── conftest.py                    # auto-marks every test in this dir as unit
 │   │   └── test_*.py
@@ -46,9 +46,10 @@ project_root/
 │       ├── conftest.py                    # auto-marks every test in this dir as e2e
 │       └── test_*.py
 ├── pyproject.toml                         # pytest config (testpaths, markers) + test deps
-├── requirements.txt                       # pinned versions
+├── requirements.txt                       # pinned versions (include python-dotenv for secrets)
 ├── README.md                              # setup, run commands, design notes
-└── .gitignore                             # secrets, __pycache__, .pytest_cache
+├── .env.example                           # committed secret-key template — keys only, no values
+└── .gitignore                             # .env, __pycache__, .pytest_cache
 ```
 
 **The conftest registry** — mirror the `TEST_CONFIG` pattern from the parkinglot repo. Each env maps to an API URL and a server strategy:
@@ -84,9 +85,11 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 
 - `APP_ENV` defaults to `dev`; any value not in `TEST_CONFIG` → `pytest.exit`.
 - `APP_ENV=prod` requires `--run-prod` (added via `parser.addoption` in `pytest_addoption`); `pytest_configure` aborts otherwise.
-- Known secret env vars (`API_KEY`, `AUTH_TOKEN`, `DB_PASSWORD`) are stripped from the environment on import (`os.environ.pop`) so client code never picks them up.
+- Secrets are loaded explicitly at import from a gitignored `.env` (or CI env vars) via `python-dotenv` into a `SECRETS` mapping, then stripped from `os.environ` (`os.environ.pop`) so client code can never pick them up accidentally. Deliberate loading is the intended path; stripping is only the safety net. Missing secrets fail fast at fixture time with a pointer to `.env.example`.
 
-**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Runtime settings (API URL, server strategy) come from the `TEST_CONFIG` registry via `APP_ENV`. Test-owned artifacts (sample payloads, expected responses) live in `tests/data/`, never in the app config.
+**Registry vs secrets (hybrid)**: `TEST_CONFIG` holds **only non-secret, static topology** (API URL, server strategy, ports). Credentials of any kind — including demo/test creds — are secrets and are **never valid registry keys**. All credentials live in a gitignored `.env` (committed template: `.env.example`) or CI env vars, loaded via `python-dotenv` at import and stripped from the environment after capture. Treating even demo creds as secrets keeps the boundary binary: no judgment call in review about what counts as a secret.
+
+**Config vs test data**: There is no `tests/config/` that re-declares runtime settings — that causes drift. Non-secret runtime settings (API URL, server strategy) come from the `TEST_CONFIG` registry via `APP_ENV`. Test-owned artifacts (sample payloads, expected responses) live in `tests/data/` — but credentials never do: they are secrets and live in `.env`/CI env only.
 
 **Key rule**: Keep test logic out of `src/` and business logic out of `tests/`.
 
@@ -102,7 +105,7 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 
 - **Debuggable failures**: every failure must be actionable — log context (request, params, response) so a red test tells you what broke and where, not just that it broke. Prefer a clear assertion message over re-running to debug.
 - **Readable over clever**: small functions (one job each), early returns over deep nesting, type hints on public functions, dataclasses instead of loose dicts. If a line needs a comment to be understood, simplify it.
-- **Security**: no hardcoded secrets/URLs — read from the `TEST_CONFIG` registry or per-env env vars, never in source. Never log credentials or PII. No `shell=True`. Secrets are stripped at import.
+- **Security**: no hardcoded secrets/URLs — base URLs read from the `TEST_CONFIG` registry; credentials read from `.env`/CI env vars (never the registry, never source). Never log credentials or PII. No `shell=True`. Secrets are captured explicitly at import, then stripped from the environment.
 - **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking. Never use `responses` or other third-party mock libraries. Patch at the HTTP client boundary (`requests.request` / your HTTP lib's request function) with a helper like `_resp()` that builds mock Response objects. This keeps mocks explicit, debuggable, and avoids extra dependencies.
 - **Pytest discipline**: Arrange-Act-Assert; fixtures in `conftest.py`; `@pytest.mark.parametrize` for data cases; markers `unit`/`integration`/`e2e`; tests must be independent and order-free. Mock HTTP/external systems, not internal logic. Cover happy path + validation failure + one edge/error case per critical flow. Each test dir auto-marks itself via `pytest_collection_modifyitems` comparing `Path(item.fspath).parent` to the conftest's own directory — no manual markers.
 - **Complex response validation (soft assertions)**: When a single response has 10+ fields to validate (e.g. a full user profile), use soft assertions so one bad field doesn't hide the rest. Add `pytest-check` to `requirements.txt` and validate every field with `msg=` naming the field:
@@ -126,8 +129,8 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 
 ## Step 3 — Build order
 
-1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions)
-2. `tests/conftest.py` — `TEST_CONFIG` registry, `_resolve_env`, secret stripping, `--run-prod` guard, client fixtures (server strategies)
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions and `python-dotenv` for secrets)
+2. `.env.example` (secret-key template) + `tests/conftest.py` — `TEST_CONFIG` registry (topology only), `_resolve_env`, secret loading/stripping (python-dotenv), `--run-prod` guard, client fixtures (server strategies)
 3. One client (the thin adapter for the system under test)
 4. Models for the data exchanged
 5. Nested conftests (auto-markers) + tests (unit first, then integration/e2e) + any `tests/data/` files
@@ -146,7 +149,7 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 
 - [ ] Structure matches the layout above (`pyproject.toml`, not `pytest.ini`)
 - [ ] `pytest` passes with documented commands; env selected via `APP_ENV`, defaults to `dev`
-- [ ] No secrets/URLs hardcoded; registry/env-driven with prod guard and secret stripping
+- [ ] No secrets/URLs hardcoded; `TEST_CONFIG` holds topology only, credentials live in gitignored `.env`/CI env (`.env.example` committed), prod guard + secret stripping present
 - [ ] Clear names, type hints, specific exception handling
 - [ ] Complex-response tests validate all fields and aggregate failures via `pytest-check` soft assertions (not the first failing `assert`)
 - [ ] README lets a reviewer run it in under 5 minutes
