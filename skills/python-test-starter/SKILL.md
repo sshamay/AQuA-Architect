@@ -105,11 +105,28 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 - **Security**: no hardcoded secrets/URLs — read from the `TEST_CONFIG` registry or per-env env vars, never in source. Never log credentials or PII. No `shell=True`. Secrets are stripped at import.
 - **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking. Never use `responses` or other third-party mock libraries. Patch at the HTTP client boundary (`requests.request` / your HTTP lib's request function) with a helper like `_resp()` that builds mock Response objects. This keeps mocks explicit, debuggable, and avoids extra dependencies.
 - **Pytest discipline**: Arrange-Act-Assert; fixtures in `conftest.py`; `@pytest.mark.parametrize` for data cases; markers `unit`/`integration`/`e2e`; tests must be independent and order-free. Mock HTTP/external systems, not internal logic. Cover happy path + validation failure + one edge/error case per critical flow. Each test dir auto-marks itself via `pytest_collection_modifyitems` comparing `Path(item.fspath).parent` to the conftest's own directory — no manual markers.
+- **Complex response validation (soft assertions)**: When a single response has 10+ fields to validate (e.g. a full user profile), use soft assertions so one bad field doesn't hide the rest. Add `pytest-check` to `requirements.txt` and validate every field with `msg=` naming the field:
+
+  ```python
+  from pytest_check import check
+
+  def test_profile_shape(profile) -> None:
+      check.equal(profile["username"], "emilys", msg="username")
+      check.is_true(bool(profile["email"]), msg="email is non-empty")
+      check.greater(profile["id"], 0, msg="id is positive")
+      check.is_instance(profile["role"], str, msg="role is a string")
+  ```
+
+  Rules:
+  - Every `check.*` call carries `msg="<field>"` (plus expected/actual where useful) — a red test then lists each failing field at once (`Failed Checks: N`), not just the first one.
+  - Soft asserts **report, they don't halt**: never gate a later step on a soft check — flow-critical preconditions (e.g. login succeeded, page loaded) stay hard `assert`s. Reserve soft assertions for bulk field/schema validation.
+  - Keep hard `assert` for one-or-two field checks; soft assertions are for bulk validation.
+  - `check.raises(Expected)` covers exception cases. Do not use `check.msg()` — it is not callable in this API; use the `msg=` keyword instead.
 - **Comments**: explain *why*, not *what*. No narration comments.
 
 ## Step 3 — Build order
 
-1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt`
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions)
 2. `tests/conftest.py` — `TEST_CONFIG` registry, `_resolve_env`, secret stripping, `--run-prod` guard, client fixtures (server strategies)
 3. One client (the thin adapter for the system under test)
 4. Models for the data exchanged
@@ -131,5 +148,6 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 - [ ] `pytest` passes with documented commands; env selected via `APP_ENV`, defaults to `dev`
 - [ ] No secrets/URLs hardcoded; registry/env-driven with prod guard and secret stripping
 - [ ] Clear names, type hints, specific exception handling
+- [ ] Complex-response tests validate all fields and aggregate failures via `pytest-check` soft assertions (not the first failing `assert`)
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note (tradeoffs + what I'd add in production)

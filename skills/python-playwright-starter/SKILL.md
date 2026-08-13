@@ -104,13 +104,31 @@ def _resolve_env() -> str:
 
 - **Pytest discipline**: Arrange-Act-Assert; shared fixtures in `tests/conftest.py` (or `src/<package>/fixtures/` for reusable app fixtures); `@pytest.mark.parametrize` for data cases; markers `e2e`/`api`; tests must be independent and order-free. Each test dir (`tests/e2e/`, `tests/api/`) auto-marks itself via `pytest_collection_modifyitems` comparing `Path(item.fspath).parent` to the conftest's own directory — no manual markers.
 
+- **Complex UI validation (soft assertions)**: When verifying 10+ values at once (a checkout/receipt page, a settings form, or an API response), use soft assertions so one bad field doesn't hide the rest. Add `pytest-check` to `requirements.txt` and check each extracted value with `msg=` naming the field:
+
+  ```python
+  from pytest_check import check
+
+  def test_receipt_summary(receipt_page) -> None:
+      values = receipt_page.summary_values()  # dict extracted from the page
+      check.equal(values["subtotal"], "$120.00", msg="subtotal")
+      check.equal(values["tax"], "$10.00", msg="tax")
+      check.equal(values["total"], "$130.00", msg="total")
+  ```
+
+  Rules:
+  - Soft asserts apply to **values extracted from the page** (text/attributes) and API payloads — not to element state. Playwright's auto-retrying `expect(locator).to_be_visible()` etc. stay hard `expect` for presence/visibility.
+  - Every `check.*` carries `msg="<field>"` (plus expected/actual where useful) so a red test lists every failing field at once (`Failed Checks: N`), not just the first one.
+  - Flow-critical preconditions (page loaded, element visible, API returned 2xx) stay hard `assert`/`expect`; soft assertions are for bulk value validation.
+  - `check.raises(Expected)` covers exception cases. Do not use `check.msg()` — it is not callable in this API; use the `msg=` keyword instead.
+
 - **Type discipline**: type hints on all public signatures; dataclasses for exchanged data instead of loose dicts.
 
 - **Comments**: explain *why*, not *what*. No narration comments.
 
 ## Step 3 — Build order
 
-1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt`
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions)
 2. `tests/conftest.py` — `TEST_CONFIG` registry, `_resolve_env`, secret stripping, `--run-prod` guard, base-url fixture, page-object fixtures
 3. One Page Object for the system under test
 4. `tests/e2e/conftest.py` (auto-marker) + first `tests/e2e/` test
@@ -131,5 +149,6 @@ def _resolve_env() -> str:
 - [ ] `pytest` passes with documented commands; env selected via `APP_ENV`, defaults to `dev`
 - [ ] No secrets/URLs hardcoded; registry/env-driven with prod guard and secret stripping
 - [ ] Clear names, type hints, web-first assertions (no sleeps)
+- [ ] Complex multi-field validations aggregate failures via `pytest-check` soft assertions (not the first failing `assert`)
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note (tradeoffs + what I'd add in production)
