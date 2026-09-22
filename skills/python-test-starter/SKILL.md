@@ -9,15 +9,56 @@ description: |
 
 # Python + pytest Test Starter
 
-## Step 0 — Gather requirements first
+## Step 0 — Gather requirements first (guided)
 
-Before scaffolding, ask the user these questions:
+Before scaffolding, ask the user these questions in order. Items marked *recommend* ship with a default — present it plus its one-line reason; the user's answer always wins. Record answers and overrides in the README's design-decisions note.
 
-1. **Assignment** — What system are you testing? (REST API / UI / CLI / library)
-2. **System under test** — What's the base URL / app path / package being tested? Is it a service you control (spawnable) or external (fixed URL)?
-3. **Tech stack** — Allowed libraries? (requests / httpx / playwright / selenium / etc.)
-4. **Constraints** — Time limit, must run offline, no network, etc.
-5. **Package name** — Name for the Python package (default: derived from project dir)
+1. **Assignment** — What system are you testing? Pick the closest match:
+   - REST API / gRPC service
+   - UI (web / desktop)
+   - CLI
+   - Library / SDK
+   - **Distributed component** — job queue, batch processor, object/file store, message consumer, async API client
+
+   *Recommend: if it's a distributed component, complete Q6 (reliability scope) too.*
+
+2. **System under test** — What's the base URL / app path / package? Service you control (spawnable), external (fixed URL), or a simulated/toy component you'll also build in-repo?
+
+3. **Tech stack** — Allowed libraries? (requests / httpx / playwright / selenium / asyncio / etc.)
+
+   *Recommend: mirror what the SUT uses — sync `requests` for sync HTTP, `httpx` + `pytest-asyncio` for async, `playwright` for browsers. Never add a library the SUT doesn't already depend on.*
+
+4. **Constraints** — Time limit, must run offline, no network, CI-only, stdlib-only?
+
+5. **Package name** — Name for the Python package (default: derived from project dir).
+
+6. **Reliability scope** — Does the assignment need reliability coverage? Multi-select, or answer "none":
+   - Timeouts + retries with **exponential backoff**
+   - **Idempotency** guarantees (retry-safe operations; state effect happens exactly once)
+   - **Failure modes** — simulated latency, packet loss, node disconnects, race conditions
+   - **Async** flows (`pytest-asyncio`, async client), if the SUT is async
+   - **State verification** across components (N-in/N-out, zero duplicates, read-your-writes)
+   - None — core scaffold only
+
+   *Recommend (minimum set): "timeouts + retry/backoff" — highest reliability value for near-zero cost. Add idempotency + state verification whenever a request can be replayed (queues, batches, stores). Include failure modes when the distributed row of the strategy matrix applies.*
+
+7. **Fault-injection style** — *only asked if "failure modes" was selected in Q6*:
+   - **Deterministic scheduler** at the HTTP-client boundary — fake clock + scripted faults, zero infrastructure — *recommended first*
+   - **Real multi-node topology** — Docker Compose + chaos proxy (TCP-level drops, kill/restart nodes) — *phase 2, see `references/topology.md`*
+
+   *Recommend: start deterministic; graduate to real topology only when a fake can't express the failure (half-open TCP, kill -9 mid-ack).*
+
+**Module routing** — before writing any code, read the files matching the Q6/Q7 answers:
+
+| Selected in Step 0 | Read first |
+|---|---|
+| Nothing reliability-related | core SKILL.md only |
+| Timeouts / retries / idempotency / state / async | `references/reliability-patterns.md` |
+| Failure modes — deterministic | `references/reliability-patterns.md` (FaultScheduler section) |
+| Failure modes — multi-node / chaos | `references/topology.md`, after reliability-patterns |
+| Any reliability option | `references/strategy-matrix.md` — fill the distributed-failure row |
+
+If the user is preparing to demonstrate these skills (interview, review, rubric), share `references/concepts-to-review.md` first — it maps each expected concept to where it appears in the scaffold.
 
 Adapt the generated code to these answers. Do not hardcode assumptions.
 
@@ -98,15 +139,19 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 - **Ask before assuming**: Always begin by asking what the user is testing. Gather SUT, tech stack, and constraints before writing any code.
 
 - **Clear naming**: snake_case for files/functions/variables, PascalCase for classes. Verb-first functions (`create_order`, `resolve_env`). No cryptic abbreviations, no 8-word names. Test names: `test_<behavior>_<expected_outcome>`.
-- **Right abstraction**: separate config -> clients -> services -> tests. Wrap external calls in a client class so tests can mock at that boundary. No factories-of-factories, custom DSLs, or base classes "just in case."
+- **Right abstraction**: separate config -> clients -> services -> tests. Wrap external calls in a client class so tests can mock at that boundary. No factories-of-factories, custom DSLs, or base classes "just in case." Builder/Factory patterns **are** encouraged for test data — see `references/concepts-to-review.md`.
 
 - **Clean OOP**: small classes with a single responsibility; prefer composition over inheritance; no god objects. Each client/service should do one job and be independently testable.
 - **Error handling**: `try/except` around I/O and network calls; catch specific exceptions, never bare `except:`. Raise clear domain exceptions with context. Add timeouts to every network call. Fail fast on bad config (`pytest.exit` on invalid `APP_ENV`). Defensive: validate inputs; never silently swallow a failure.
 
+- **Polling & timeout conditions**: for readiness checks or state waits, use a bounded polling loop with an overall deadline — `while time.monotonic() < deadline` with a short interval, then fail with context. Never `while True` without a cap; never unbounded `time.sleep`.
+
 - **Debuggable failures**: every failure must be actionable — log context (request, params, response) so a red test tells you what broke and where, not just that it broke. Prefer a clear assertion message over re-running to debug.
 - **Readable over clever**: small functions (one job each), early returns over deep nesting, type hints on public functions, dataclasses instead of loose dicts. If a line needs a comment to be understood, simplify it.
 - **Security**: no hardcoded secrets/URLs — base URLs read from the `TEST_CONFIG` registry; credentials read from `.env`/CI env vars (never the registry, never source). Never log credentials or PII. No `shell=True`. Secrets are captured explicitly at import, then stripped from the environment.
-- **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking. Never use `responses` or other third-party mock libraries. Patch at the HTTP client boundary (`requests.request` / your HTTP lib's request function) with a helper like `_resp()` that builds mock Response objects. This keeps mocks explicit, debuggable, and avoids extra dependencies.
+- **Mocking**: Use `pytest-mock` (`mocker` fixture) for all mocking — never use `responses` or other third-party mock libraries. `mocker` auto-reverts every patch after the test, so patches can't leak between tests. Two rules:
+  - **Mock at the boundary, fake real behavior.** Stateful collaborators (stores, counters, node/service instances) stay **real objects** so state assertions test real logic. Only the SUT's genuine seam gets patched: for HTTP that's the request function (`requests.request`/your lib's request fn) with a `_resp()` helper building mock Response objects; for an in-process/library SUT (the distributed-component assignment) it's the method call — e.g. `mocker.patch.object(node, "write_chunk", ...)` — **never the whole class**.
+  - **Faults are scripted, not random.** Inject faults via `side_effect` sequences that fall through to the real implementation, plus an injectable `FakeClock` for backoff. The SUT itself carries **no chaos logic** (no `failure_rate`, no seeded `random`) — determinism always comes from the tests. See `references/reliability-patterns.md` section 3.
 - **Pytest discipline**: Arrange-Act-Assert; fixtures in `conftest.py`; `@pytest.mark.parametrize` for data cases; markers `unit`/`integration`/`e2e`; tests must be independent and order-free. Mock HTTP/external systems, not internal logic. Cover happy path + validation failure + one edge/error case per critical flow. Each test dir auto-marks itself via `pytest_collection_modifyitems` comparing `Path(item.fspath).parent` to the conftest's own directory — no manual markers.
 - **Complex response validation (soft assertions)**: When a single response has 10+ fields to validate (e.g. a full user profile), use soft assertions so one bad field doesn't hide the rest. Add `pytest-check` to `requirements.txt` and validate every field with `msg=` naming the field:
 
@@ -129,12 +174,13 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 
 ## Step 3 — Build order
 
-1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-check` for soft assertions and `python-dotenv` for secrets)
+1. `pyproject.toml` (`[tool.pytest.ini_options]` with `pythonpath`, `testpaths`, `markers`, `log_cli`) + `requirements.txt` (include `pytest-mock` for boundary mocking, `pytest-check` for soft assertions and `python-dotenv` for secrets)
 2. `.env.example` (secret-key template) + `tests/conftest.py` — `TEST_CONFIG` registry (topology only), `_resolve_env`, secret loading/stripping (python-dotenv), `--run-prod` guard, client fixtures (server strategies)
 3. One client (the thin adapter for the system under test)
 4. Models for the data exchanged
 5. Nested conftests (auto-markers) + tests (unit first, then integration/e2e) + any `tests/data/` files
-6. `README.md` with how to install, configure (`APP_ENV`), and run (`pytest`, `pytest -m unit`, `APP_ENV=prod pytest --run-prod`)
+6. **If reliability scope was selected (Q6)**: `tests/faults.py` (`FaultScheduler` + `FakeClock` for HTTP SUTs; `scripted_writes` / `down_writes` mocker helpers for in-process SUTs) + reliability tests per `references/reliability-patterns.md` + fill the coverage rows per `references/strategy-matrix.md`
+7. `README.md` with how to install, configure (`APP_ENV`), and run (`pytest`, `pytest -m unit`, `APP_ENV=prod pytest --run-prod`)
 
 ## Step 4 — Working rules
 
@@ -154,3 +200,4 @@ Always use temp/sandboxed resources for anything you spawn (temp DB file per fix
 - [ ] Complex-response tests validate all fields and aggregate failures via `pytest-check` soft assertions (not the first failing `assert`)
 - [ ] README lets a reviewer run it in under 5 minutes
 - [ ] Brief design-decisions note (tradeoffs + what I'd add in production)
+- [ ] **If reliability scope was selected (Q6):** at least one deterministic fault-injection test (latency / drop / race), one retry-with-backoff test using an injectable clock (no real sleeps), and one idempotency/state-verification test — all mapped in the coverage matrix from `references/strategy-matrix.md`
